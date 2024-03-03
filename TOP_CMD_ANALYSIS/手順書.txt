@@ -1,0 +1,28 @@
+【前提】
+Windows環境であること。
+Visual Studio Codeがインストールされていること。
+Pythonがインストールされていること。
+作業フォルダを作成しておくこと。
+
+【環境構築】
+1. VSCodeで作業フォルダを開く。
+2. VSCodeでコマンドプロンプトを開く。
+3. コマンドプロンプトで以下のコマンドを実行する。
+    python -m venv venv
+4. コマンドプロンプト(管理者)で以下のコマンドを実行する。
+    Set-ExecutionPolicy RemoteSigned
+    ※↓今開いているコンソールのみ実行ポリシーを変更する場合
+    Set-ExecutionPolicy RemoteSigned -Scope Process
+5. コマンドプロンプトで以下のコマンドを実行する。
+    .\venv\Scripts\activate
+6. コマンドプロンプトで以下のコマンドを実行する。
+    pip install matplotlib
+
+【実施手順】
+1. VSCodeで作業フォルダを開く。
+2. VSCodeでコマンドプロンプトを開く。
+3. コマンドプロンプトで以下のコマンドを実行する。
+    .\venv\Scripts\activate
+4. コマンドプロンプトで以下のコマンドを実行する。
+    python plot_top_cmd.py <option>
+
