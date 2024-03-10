@@ -3,10 +3,11 @@
 
 '''
 Below is an example of the execution command.
-python analyze_top_cmd.py -i system_metrics_2024-02-17.log -n 10
+python analyze_top_cmd.py
 '''
 
 import argparse
+import os
 import re
 
 # PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
@@ -31,26 +32,46 @@ RES_PATTERN = re.compile(r"\d*\.?\d+")
 def parseArgs():
     # Parse the argument.
     parser = argparse.ArgumentParser(prog="analyze_top_cmd.py", description="", epilog="end", add_help=True)
-    parser.add_argument("--input_file" , "-i", action="append",                       type=str, required=True , help="Specify the file to analyze.")
-    parser.add_argument("--output_file", "-o", action="store" , default="output.csv", type=str, required=False, help="Specify the output file for the analysis results.")
-    parser.add_argument("--num_pid"    , "-n", action="store" , default=-1          , type=int, required=False, help="Specify this when narrowing down the number of pidesses output as analysis results.")
+    parser.add_argument("--input_dir",   "-d", action="store",  default="system_metrics", type=str, required=False, help="Specify the directory to analyze.")
+    parser.add_argument("--input_file",  "-i", action="append",                           type=str, required=False, help="Specify the file to analyze.")
+    parser.add_argument("--output_file", "-o", action="store",  default="output.csv",     type=str, required=False, help="Specify the output file name of the analysis results.")
+    parser.add_argument("--pid_num",     "-n", action="store",  default=20,               type=int, required=False, help="Specify the number of 'pid' to be analyzed.")
     args = parser.parse_args()
+    i_dir = args.input_dir
     i_file = args.input_file
     o_file = args.output_file
-    num_pid = args.num_pid
+    pid_num = args.pid_num
 
-    return i_file, o_file, num_pid
+    return i_dir, i_file, o_file, pid_num
+
+def findTargetFile(i_dir, i_file, o_file):
+    if i_file:
+        for file in i_file:
+            if not os.path.isfile(file):
+                print("[ERROR] " + file + " not found.")
+                exit(1)
+        return i_file, o_file
+
+    if os.path.isdir(i_dir):
+        i_f = [os.path.join(i_dir, file) for file in os.listdir(i_dir)]
+        o_f = os.path.join(i_dir, o_file)
+        return i_f, o_f
+    else:
+        print("[ERROR] " + i_dir + " not found.")
+        exit(1)
 
 def unifyResUnits(res_str):
-    if 'g' in res_str:
-        buf = RES_PATTERN.search(res_str).group()
-        res = float(buf) * 1048576
+    if False: pass
+    elif 'm' in res_str:
+        res = float(RES_PATTERN.search(res_str).group()) * 1024
+    elif 'g' in res_str:
+        res = float(RES_PATTERN.search(res_str).group()) * 1048576
     else:
         res = res_str
 
     return int(res)
 
-def extractpidessToAnalyze(i_file, num_pid):
+def extractpidessToAnalyze(i_file, pid_num):
     data_cnt = 0
     pid_mem = dict()
     pid_cmd = dict()
@@ -63,17 +84,18 @@ def extractpidessToAnalyze(i_file, num_pid):
         fi = open(file, 'r', newline='\n')
         for line in fi:
             # Skip blank lines.
-            if len(line) == 1:
+            if line == '\n':
                 pid_list_flg = False
                 continue
 
             result = DATE_PATTERN.search(line)
-            if (result) and ("timestamp:" in line):
+            if ("timestamp:" in line) and (result):
                 data_cnt += 1
                 continue
 
             # Parse each element.
             elem = line.split()
+            pid = elem[PL_PID]
             cmd = elem[PL_CMD:]
 
             # PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
@@ -87,26 +109,27 @@ def extractpidessToAnalyze(i_file, num_pid):
                 # Since it is sometimes expressed in gigabytes, the unit is unified to kilobytes.
                 res = unifyResUnits(elem[PL_RES])
 
-                if elem[PL_PID] in pid_mem.keys():
-                    if int(res) > int(pid_mem[elem[PL_PID]]):
-                        pid_mem[elem[PL_PID]] = int(res)
+                if pid in pid_mem.keys():
+                    if res > int(pid_mem[pid]):
+                        pid_mem[pid] = res
+                        pid_cmd[pid] = cmd
                 else:
-                    if int(res) > 0:
-                        pid_mem[elem[PL_PID]] = int(res)
-                    pid_cmd[elem[PL_PID]] = cmd
+                    if res > 0:
+                        pid_mem[pid] = res
+                        pid_cmd[pid] = cmd
 
         fi.close()
 
     # Sort by memory usage. Please note that it is a list type.
     sorted_pid_mem = sorted(pid_mem.items(), key=lambda x:x[1], reverse=True)
     # Extract the top n items.
-    if num_pid > 0:
-        pickup_pid_mem = sorted_pid_mem[:num_pid]
+    if (0 < pid_num) and (pid_num < len(sorted_pid_mem)):
+        pickup_pid_mem = sorted_pid_mem[:pid_num]
     else:
         pickup_pid_mem = sorted_pid_mem
     pid_list = [pid for pid, mem in pickup_pid_mem]
 
-    return pid_list, pid_cmd, (data_cnt - 1)
+    return pid_list, pid_cmd, data_cnt
 
 def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
     data_cnt = 0
@@ -120,7 +143,7 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
     fo.write('\n')
     fo.write("time")
     for pid in pid_list:
-        fo.write("," + "\"" + ''.join(pid_cmd[pid]) + "\"")
+        fo.write("," + "\"" + ' '.join(pid_cmd[pid]) + "\"")
     fo.write('\n')
 
     for file in i_file:
@@ -131,29 +154,32 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
         fi = open(file, 'r', newline='\n')
         for line in fi:
             # Skip blank lines.
-            if len(line) == 1:
+            if line == '\n':
                 # Output to file.
                 if pid_list_flg == True:
-                    print("[INFO] - " + cur_time + " (" + str(data_cnt) + "/" + str(total_data_cnt) + ")" )
+                    prog = data_cnt / total_data_cnt * 100
+                    print("[INFO] - " + cur_time + " (" + "{: >6.2f}".format(prog) + " %)" )
                     fo.write(cur_time)
                     for pid in pid_list:
                         fo.write(',' + str(pid_mem[pid]))
                     fo.write('\n')
 
                     # Clear the file output buffer.
-                    pid_list_flg = False
                     for pid in pid_list:
                         pid_mem[pid] = 0
+
+                pid_list_flg = False
                 continue
 
             result = DATE_PATTERN.search(line)
             if (result) and ("timestamp:" in line):
-                data_cnt += 1
                 cur_time = result.group()
+                data_cnt += 1
                 continue
 
             # Parse each element.
             elem = line.split()
+            pid = elem[PL_PID]
 
             # PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
             # Set a flag to read after the above line.
@@ -166,8 +192,8 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
                 # Since it is sometimes expressed in gigabytes, the unit is unified to kilobytes.
                 res = unifyResUnits(elem[PL_RES])
 
-                if elem[PL_PID] in pid_list:
-                    pid_mem[elem[PL_PID]] = int(res)
+                if pid in pid_list:
+                    pid_mem[pid] = res
 
         fi.close()
     fo.close()
@@ -178,11 +204,14 @@ def main():
     print("[INFO] Start.")
 
     # Parse the argument.
-    i_file, o_file, num_pid = parseArgs()
+    i_dir, i_file, o_file, pid_num = parseArgs()
     print("[INFO] Parsed the argument.")
 
+    # Find for files to analyze.
+    i_file, o_file = findTargetFile(i_dir, i_file, o_file)
+
     # Extract the pidess to analyze in advance
-    pid_list, pid_cmd, data_cnt = extractpidessToAnalyze(i_file, num_pid)
+    pid_list, pid_cmd, data_cnt = extractpidessToAnalyze(i_file, pid_num)
     print("[INFO] It's ready.")
 
     # Output to file as time series data.
@@ -197,14 +226,14 @@ if __name__ == "__main__":
 
 '''
 ------------------------------
-timestamp: 2024/02/17 23:22:23
+timestamp: 2024/01/01 00:00:00
                              0
 [ 0]: タイムスタンプ(YYYY/MM/DD hh:mm:ss)
 
-top - 23:22:23 up 5 days,  8:45,  5 users,  load average: 0.00, 0.00, 0.00
+top - 00:00:00 up 1 days,  1:00,  1 users,  load average: 0.00, 0.00, 0.00
              0         1      2         3                    4     5     6
 [ 0]: タイムスタンプ(hh:mm:ss)
-[ 1]: OSが起動してからの時間
+[ 1]: OSが起動してからの日数
 [ 2]: OSが起動してからの時間
 [ 3]: コンソールにログインしているユーザー
 [ 4]: 実行待ちとディスクI/O待ちのプロセス数[ 1min平均]
@@ -267,3 +296,4 @@ MiB Swap:      0.0 total,      0.0 free,      0.0 used.   3411.7 avail Mem
 [11]: プロセス名
 
 '''
+
