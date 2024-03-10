@@ -53,7 +53,7 @@ def findTargetFile(i_dir, i_file, o_file):
         return i_file, o_file
 
     if os.path.isdir(i_dir):
-        i_f = [os.path.join(i_dir, file) for file in os.listdir(i_dir)]
+        i_f = [os.path.join(i_dir, file) for file in os.listdir(i_dir) if 'top_cmd' in file]
         o_f = os.path.join(i_dir, o_file)
         return i_f, o_f
     else:
