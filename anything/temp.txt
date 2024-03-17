@@ -1,0 +1,85 @@
+import json
+
+BUFFER_SIZE = 21
+
+def initialize_buffer():
+    return [{'line': '', 'flag': False} for _ in range(BUFFER_SIZE)]
+
+def move_buffer(buffer):
+    for i in range(BUFFER_SIZE - 1, 0, -1):
+        buffer[i]['line'] = buffer[i - 1]['line']
+        buffer[i]['flag'] = buffer[i - 1]['flag']
+
+def extract_lines_with_string(input_file, target_strings, additional_strings):
+    output_file_target = input_file.replace('.txt', '_target_output.txt')  # 特定文字列の抽出結果を出力するファイル
+    output_file_additional = input_file.replace('.txt', '_additional_output.txt')  # 追加文字列の抽出結果を出力するファイル
+
+    buffer = initialize_buffer()
+    with open(input_file, 'r') as f_in, open(output_file_target, 'w') as f_out_target, open(output_file_additional, 'w') as f_out_additional:
+        for line in f_in:
+            # バッファの更新
+            move_buffer(buffer)
+            buffer[0]['line'] = line.strip()
+            buffer[0]['flag'] = any(target_string in line for target_string in target_strings)
+
+            # additional_stringsがバッファ内にあるかどうかを判定し、フラグを更新する
+            for i in range(BUFFER_SIZE):
+                if any(additional_string in buffer[i]['line'] for additional_string in additional_strings):
+                    for j in range(i + 1):
+                        buffer[j]['flag'] = True
+                    break
+
+            # ファイル出力
+            if buffer[BUFFER_SIZE - 1]['flag']:
+                for i in range(BUFFER_SIZE):
+                    if buffer[i]['flag']:
+                        if buffer[i]['line']:
+                            f_out_additional.write(buffer[i]['line'] + '\n')
+                    else:
+                        if buffer[i]['line']:
+                            f_out_target.write(buffer[i]['line'] + '\n')
+
+# 外部ファイルから設定を読み込む
+def load_settings_from_json(json_file):
+    with open(json_file, 'r') as f:
+        data = json.load(f)
+    return data['settings']
+
+# メイン処理
+def main():
+    json_settings_file = '/path/to/your/input_settings.json'  # 設定ファイルのパス
+
+    # JSON設定ファイルから設定を読み込む
+    settings = load_settings_from_json(json_settings_file)
+
+    # 各設定について処理を行う
+    for setting_name, setting in settings.items():
+        input_file = setting['input_file']
+        target_strings = setting['target_strings']
+        additional_strings = setting['additional_strings']
+
+        # 特定文字列と追加文字列を含む行を抽出して出力ファイルに書き込む
+        extract_lines_with_string(input_file, target_strings, additional_strings)
+
+if __name__ == "__main__":
+    main()
+
+
+
+{
+  "settings": {
+    "setting1": {
+      "input_file": "/path/to/your/input/file1.txt",
+      "target_strings": ["特定文字列1", "特定文字列2", "特定文字列3"],
+      "additional_strings": ["追加文字列1", "追加文字列2"]
+    },
+    "setting2": {
+      "input_file": "/path/to/your/input/file2.txt",
+      "target_strings": ["特定文字列4", "特定文字列5", "特定文字列6"],
+      "additional_strings": ["追加文字列3", "追加文字列4"]
+    }
+  }
+}
+
+
+
