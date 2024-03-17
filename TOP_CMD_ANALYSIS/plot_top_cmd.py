@@ -9,9 +9,10 @@ python plot_top_cmd.py -s "2024/01/01 00:00" -e "2024/01/01 23:59" -k xxx_cpu
 import argparse
 import os
 import csv
+from time import time
+from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
 
 DEFAULT_DATE = datetime.strptime("1970/01/01 00:00", '%Y/%m/%d %H:%M')
 
@@ -68,19 +69,20 @@ def readTimeSeriesData(i_file, s_time, e_time):
 
 def plotOnGraph(o_file, s_time, e_time, graph_kind, pid_list, cmd_list, mem_mat):
     plt.figure(figsize=(12, 8))
-    plt.subplots_adjust(left=0.07, right=0.96, top=0.96, bottom=0.09)
+    plt.subplots_adjust(left=0.070, right=0.900, top=0.960, bottom=0.090)
 
     plt.title(graph_kind, fontsize=16)
 
     plt.xlabel("")
-    plt.ylabel("memory(RES) [KB]")
-    plt.ticklabel_format(useOffset=False)
+    plt.ylabel("Memory(RES) [KB]")
+    plt.ticklabel_format(axis='y', useMathText=True)
 
     time = [datetime.strptime(row['time'], '%Y/%m/%d %H:%M:%S') for row in mem_mat]
     for idx in range(len(pid_list)):
         pid = pid_list[idx]
-        cmd = cmd_list[idx]
-        label_name = ("(" + pid + ") " + cmd[1:-1])[:20]
+        #cmd = cmd_list[idx]
+        #label_name = ("(" + pid + ") " + cmd[1:-1])[:20]
+        label_name = pid
         data = [int(row[pid]) for row in mem_mat]
         plt.plot(time, data, label=label_name)
 
@@ -90,12 +92,13 @@ def plotOnGraph(o_file, s_time, e_time, graph_kind, pid_list, cmd_list, mem_mat)
     plt.xticks(rotation=30)
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
 
-    plt.legend()
+    plt.legend(bbox_to_anchor=(1.115, 1.000), loc="upper right")
 
     plt.savefig(o_file)
     plt.show()
 
 def main():
+    proc_time = time()
     print("[INFO] Start.")
 
     # Parse the argument.
@@ -114,6 +117,7 @@ def main():
     plotOnGraph(o_file, s_time, e_time, graph_kind, pid_list, cmd_list, mem_mat)
 
     print("[INFO] It's finished.")
+    print("[INFO] Proc time: " + str(round((time() - proc_time))) + "s")
 
 if __name__ == "__main__":
     main()

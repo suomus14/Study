@@ -9,6 +9,7 @@ python analyze_top_cmd.py
 import argparse
 import os
 import re
+from time import time
 
 # PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
 #   0    1  2  3    4   5   6 7    8    9    10      11
@@ -135,6 +136,9 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
     data_cnt = 0
     pid_mem = dict()
 
+    s_time = None
+    e_time = None
+
     fo = open(o_file, 'w', newline='\n')
     fo.write("time")
     for pid in pid_list:
@@ -175,6 +179,12 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
             if (result) and ("timestamp:" in line):
                 cur_time = result.group()
                 data_cnt += 1
+
+                if (s_time is None) or (s_time > cur_time):
+                    s_time = cur_time
+                if (e_time is None) or (e_time < cur_time):
+                    e_time = cur_time
+
                 continue
 
             # Parse each element.
@@ -198,9 +208,12 @@ def getTimeSeriesData(pid_list, pid_cmd, total_data_cnt, i_file, o_file):
         fi.close()
     fo.close()
 
+    print("[INFO] Analyzed period: " + s_time + " - " + e_time)
+
     return
 
 def main():
+    proc_time = time()
     print("[INFO] Start.")
 
     # Parse the argument.
@@ -218,6 +231,7 @@ def main():
     getTimeSeriesData(pid_list, pid_cmd, data_cnt, i_file, o_file)
 
     print("[INFO] It's finished.")
+    print("[INFO] Proc time: " + str(round((time() - proc_time))) + "s")
 
 if __name__ == "__main__":
     main()
