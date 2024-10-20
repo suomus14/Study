@@ -1,0 +1,160 @@
+
+mdas\MDAS_2.8.0\LATEST\6300ES6a\CppCode\Repository\app\repo_if\LotSeq.cpp
+	static void saveRecoveryStartTime( struct timeval startTime_ )
+	{
+		std::string targetFilePath = getFileWithEndTimeMarker();
+		std::string newFileName;
+		std::string lotSeqStartTime = getTimeAsString(startTime_);
+
+		if ( targetFilePath.empty() ) {
+			// Create New Interval File - <MDAS_DCDP_RECOVERY_TIME_DIR>/<START_TIME>_END____TIME___MARKER.rec
+			std::string newFileName = lotSeqStartTime + std::string("_") + END_TIME_MARKER + std::string(".rec");
+			std::string filePath = recoveryTimeDir + std::string("/") + newFileName;
+			std::ofstream(filePath.c_str());
+			LOGREPO_INFO(logger, "%s : Set DCDP Recovery Start Time. Interval File: %s", processName.c_str(), newFileName.c_str());
+		} else {
+			// Update Time Interval File
+			std::string targetFileName = targetFilePath.substr(targetFilePath.find_last_of("/") + 1);
+			std::string newFileName = targetFileName.replace(STARTTIME_START_INDEX, START_TIME_MARKER.length(), lotSeqStartTime);
+			std::string filePath = recoveryTimeDir + std::string("/") + newFileName;
+			if ( rename(targetFilePath.c_str(), filePath.c_str()) != 0 ) {
+				LOGREPO_WARN(logger, "%s : Failed to rename interval file: %s to %s", processName.c_str(), targetFileName.c_str(), newFileName.c_str());
+			} else {
+				LOGREPO_INFO(logger, "%s : Set DCDP Recovery Start Time at LotSeq. Interval File: %s", processName.c_str(), newFileName.c_str());
+			}
+		}
+	}
+
+
+
+mdas\MDAS_2.8.0\LATEST\mdas\CppCode\mdas_collector\LogCollector.cc
+	void LogCollector::saveRecoveryEndTime( void )
+	{
+		std::string targetFilePath = getFileWithEndTimeMarker();
+		std::string endTimeStr = getTimeAsString(m_latestDCDPTimeVal);
+
+		if ( !targetFilePath.empty() ) {
+			std::string targetFileName = targetFilePath.substr(targetFilePath.find_last_of("/") + 1);
+			m_strPreviousLotStartTime = targetFileName.substr(STARTTIME_START_INDEX, START_TIME_MARKER.length());
+			std::string newFile = targetFilePath;
+			newFile.replace(newFile.find(END_TIME_MARKER), END_TIME_MARKER.length(), endTimeStr);
+			std::ofstream(newFile.c_str());
+			LOGREPO_INFO(logger, "%s : Set DCDP Recovery End Time. Interval File: %s", m_processName.c_str(), newFile.c_str());
+		} else {
+			LOGREPO_INFO(logger, "%s : Setting of DCDP Recovery End Time is not needed.", m_processName.c_str());
+			m_strPreviousLotStartTime = endTimeStr;
+			// Create New Interval File - <MDAS_DCDP_RECOVERY_TIME_DIR>/<START_TIME>_END____TIME___MARKER.rec
+			std::string newFileName = m_strPreviousLotStartTime + std::string("_") + END_TIME_MARKER + std::string(".rec");
+			std::string filePath = m_recoveryTimeDir + std::string("/") + newFileName;
+			std::ofstream(filePath.c_str());
+			LOGREPO_INFO(logger, "%s : Set DCDP Recovery Start Time. Interval File: %s", m_processName.c_str(), newFileName.c_str());
+		}
+	}
+
+
+
+----------------------------------------------------------------------------------------------------
+1. グローバルなstd::mutexの定義
+まず、排他制御に使用するstd::mutexをヘッダーファイルで宣言し、ソースファイル間で共有します。
+
+mutex_defs.h
+cpp
+コードをコピーする
+#ifndef MUTEX_DEFS_H
+#define MUTEX_DEFS_H
+
+#include <mutex>
+
+extern std::mutex file_mutex;  // グローバルに共有されるmutex
+
+#endif
+mutex_defs.cpp
+cpp
+コードをコピーする
+#include "mutex_defs.h"
+
+std::mutex file_mutex;  // 実体の定義
+2. ファイルA (file_writer.cpp): ファイルへの書き込み
+書き込み操作が行われるファイルで、std::mutexを使って排他制御を行います。
+
+file_writer.cpp
+cpp
+コードをコピーする
+#include <fstream>
+#include <iostream>
+#include "mutex_defs.h"  // グローバルmutexをインクルード
+
+void write_to_file(const std::string& filename, const std::string& message) {
+    std::lock_guard<std::mutex> lock(file_mutex);  // 排他制御
+    std::ofstream file(filename, std::ios::app);
+    if (file.is_open()) {
+        file << message << std::endl;
+        std::cout << "Written to file: " << message << std::endl;
+    } else {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+    }
+}
+3. ファイルB (file_reader.cpp): ファイルの読み込み
+読み込み操作を行うファイルでも同じstd::mutexを使用して排他制御を行います。
+
+file_reader.cpp
+cpp
+コードをコピーする
+#include <fstream>
+#include <iostream>
+#include "mutex_defs.h"  // グローバルmutexをインクルード
+
+void read_from_file(const std::string& filename) {
+    std::lock_guard<std::mutex> lock(file_mutex);  // 排他制御
+    std::ifstream file(filename);
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            std::cout << "Read from file: " << line << std::endl;
+        }
+    } else {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+    }
+}
+4. ファイルC (thread_manager.cpp): スレッドの起動
+スレッドを管理する部分で、file_writer.cppとfile_reader.cppで定義された操作をスレッドとして起動します。
+
+thread_manager.cpp
+cpp
+コードをコピーする
+#include <thread>
+#include "file_writer.h"  // 書き込み関数
+#include "file_reader.h"  // 読み込み関数
+
+void start_threads() {
+    std::thread t1(write_to_file, "example.txt", "Thread 1: Writing");
+    std::thread t2(read_from_file, "example.txt");
+    std::thread t3(write_to_file, "example.txt", "Thread 3: More Writing");
+
+    t1.join();
+    t2.join();
+    t3.join();
+}
+5. メインプログラム (main.cpp)
+最後に、main.cppでスレッドを起動する関数を呼び出します。
+
+cpp
+コードをコピーする
+#include "thread_manager.h"
+
+int main() {
+    start_threads();
+    return 0;
+}
+まとめ
+std::mutexの共有: mutex_defs.hで宣言し、各ファイルでインクルードすることで、書き込み操作と読み込み操作の双方で排他制御を共有します。
+排他制御: 読み込みや書き込み操作の前にstd::mutexでロックを取得し、操作が終わったらロックを自動で解除することで、競合が発生しないようにします。
+ファイル構成の分離: 各操作（読み込み・書き込み）は別々のファイルに分割されていますが、グローバルなstd::mutexを使うことで排他制御を一貫して行います。
+これにより、書き込みと読み込み操作が別々のファイルに分かれていても、スレッド間で安全にファイルを操作できます。
+
+
+
+
+
+
+
